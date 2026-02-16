@@ -196,7 +196,7 @@ mod tests {
         let json = serde_json::to_string(&arg).unwrap();
         assert!(json.contains("\"channel\":\"tickers\""));
         assert!(json.contains("\"instId\":\"BTC-USDT\""));
-        // None fields should not appear
+        // `None` fields should not appear.
         assert!(!json.contains("instType"));
     }
 

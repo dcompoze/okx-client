@@ -2,7 +2,6 @@ use crate::error::OkxResult;
 use crate::rest::RestClient;
 
 impl RestClient {
-    // ──────────────────── System ────────────────────
 
     /// Get system status.
     /// GET /api/v5/system/status

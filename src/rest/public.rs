@@ -4,7 +4,6 @@ use crate::types::request::public::*;
 use crate::types::response::public::*;
 
 impl RestClient {
-    // ──────────────────── Public Data ────────────────────
 
     /// Get instruments (list of trading instruments).
     /// GET /api/v5/public/instruments

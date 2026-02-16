@@ -2,7 +2,6 @@ use crate::error::OkxResult;
 use crate::rest::RestClient;
 
 impl RestClient {
-    // ──────────────────── Trading Data ────────────────────
 
     /// Get support coin.
     /// GET /api/v5/rubik/stat/trading-data/support-coin

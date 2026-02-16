@@ -1,2 +1,2 @@
-// WS response types are defined in events.rs as WsDataEvent, WsEvent, and WsApiResponse.
-// This module can hold additional specialized response types if needed.
+// WS response types are defined in `events.rs`.
+// This module can hold additional response types when needed.

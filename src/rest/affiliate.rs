@@ -2,7 +2,6 @@ use crate::error::OkxResult;
 use crate::rest::RestClient;
 
 impl RestClient {
-    // ──────────────────── Affiliate ────────────────────
 
     /// Get affiliate invitee detail.
     /// GET /api/v5/affiliate/invitee/detail

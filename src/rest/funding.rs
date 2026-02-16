@@ -4,7 +4,6 @@ use crate::types::request::funding::*;
 use crate::types::response::funding::*;
 
 impl RestClient {
-    // ──────────────────── Funding / Asset ────────────────────
 
     /// Get list of currencies.
     /// GET /api/v5/asset/currencies

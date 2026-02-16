@@ -123,7 +123,7 @@ mod tests {
 
         pending.reject_all();
 
-        // Receivers should get an error since senders were dropped
+        // Receivers should get an error because senders were dropped.
         assert!(rx1.try_recv().is_err());
         assert!(rx2.try_recv().is_err());
     }

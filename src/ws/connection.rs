@@ -48,7 +48,6 @@ pub fn parse_ws_message(text: &str) -> Option<WsMessage> {
         return Some(WsMessage::Pong);
     }
 
-    // Try to parse as JSON
     let value: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
         Err(e) => {
@@ -57,7 +56,7 @@ pub fn parse_ws_message(text: &str) -> Option<WsMessage> {
         }
     };
 
-    // WS API response (has "id" and "op" fields)
+    // WS API responses include both `id` and `op`.
     if value.get("id").is_some() && value.get("op").is_some() {
         if let Ok(resp) = serde_json::from_value::<WsApiResponse>(value) {
             return Some(WsMessage::ApiResponse(resp));
@@ -66,7 +65,7 @@ pub fn parse_ws_message(text: &str) -> Option<WsMessage> {
         }
     }
 
-    // Data event (has "arg" and "data" array)
+    // Data events include `arg` and `data`.
     if value.get("arg").is_some() && value.get("data").is_some() {
         if let Ok(evt) = serde_json::from_value::<WsDataEvent>(value) {
             return Some(WsMessage::Data(evt));
@@ -75,7 +74,7 @@ pub fn parse_ws_message(text: &str) -> Option<WsMessage> {
         }
     }
 
-    // Control event (has "event" field)
+    // Control events include `event`.
     if value.get("event").is_some() {
         if let Ok(evt) = serde_json::from_value::<WsEvent>(value) {
             return Some(WsMessage::Event(evt));
@@ -114,12 +113,10 @@ pub async fn read_loop(
             }
             Ok(Message::Ping(data)) => {
                 debug!("WS {conn_type} received ping");
-                // tungstenite auto-responds with pong
+                // Tungstenite auto-responds with `pong`.
                 let _ = data;
             }
-            Ok(_) => {
-                // Binary, Pong, Frame - generally ignored
-            }
+            Ok(_) => {}
             Err(e) => {
                 error!("WS {conn_type} read error: {e}");
                 let _ = tx.send(WsMessage::Disconnected(conn_type));

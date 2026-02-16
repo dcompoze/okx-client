@@ -4,7 +4,6 @@ use crate::types::request::trade::*;
 use crate::types::response::trade::*;
 
 impl RestClient {
-    // ──────────────────── Orders ────────────────────
 
     /// Place a single order.
     /// POST /api/v5/trade/order
@@ -131,7 +130,6 @@ impl RestClient {
             .await
     }
 
-    // ──────────────────── Algo Orders ────────────────────
 
     /// Place an algo order (trigger, OCO, conditional, iceberg, TWAP, etc.).
     /// POST /api/v5/trade/order-algo

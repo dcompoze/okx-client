@@ -4,7 +4,6 @@ use crate::types::request::account::*;
 use crate::types::response::account::*;
 
 impl RestClient {
-    // ──────────────────── Account ────────────────────
 
     /// Get account balance.
     /// GET /api/v5/account/balance

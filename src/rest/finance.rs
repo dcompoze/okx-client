@@ -2,7 +2,6 @@ use crate::error::OkxResult;
 use crate::rest::RestClient;
 
 impl RestClient {
-    // ──────────────────── Finance (Staking / Savings / Lending) ────────────────────
 
     /// Get staking offers.
     /// GET /api/v5/finance/staking-defi/offers

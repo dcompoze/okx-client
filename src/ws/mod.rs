@@ -35,16 +35,11 @@ use self::types::WsConfig;
 /// # async fn example() {
 /// let config = WsConfig::default();
 /// let client = WebsocketClient::new(config);
-///
-/// // Subscribe to BTC-USDT ticker
 /// let mut rx = client.subscribe(vec![
 ///     WsSubscriptionArg::with_inst_id("tickers", "BTC-USDT"),
 /// ]).await.unwrap();
-///
-/// // Receive messages
-/// while let Ok(msg) = rx.recv().await {
-///     println!("Received: {:?}", msg);
-/// }
+/// let msg = rx.recv().await.unwrap();
+/// println!("{msg:?}");
 /// # }
 /// ```
 pub struct WebsocketClient {
@@ -52,7 +47,7 @@ pub struct WebsocketClient {
     store: Arc<RwLock<WsStore>>,
     event_tx: broadcast::Sender<WsMessage>,
     pending_requests: Arc<Mutex<PendingRequests>>,
-    /// Channel for sending raw text to the write loops
+    /// Channel for sending raw text to write loops.
     write_txs: Arc<RwLock<WriteChannels>>,
 }
 
@@ -113,7 +108,6 @@ impl WebsocketClient {
         &self,
         args: Vec<WsSubscriptionArg>,
     ) -> OkxResult<broadcast::Receiver<WsMessage>> {
-        // Group subscriptions by connection type
         let mut public_args = Vec::new();
         let mut private_args = Vec::new();
         let mut business_args = Vec::new();
@@ -126,7 +120,6 @@ impl WebsocketClient {
             }
         }
 
-        // Connect and subscribe to each connection type as needed
         if !public_args.is_empty() {
             self.ensure_connected(WsConnectionType::Public).await?;
             self.send_subscribe(WsConnectionType::Public, public_args)
@@ -193,13 +186,11 @@ impl WebsocketClient {
         let request = api::build_api_request(op, args);
         let id = request.id.clone();
 
-        // Register pending request
         let rx = {
             let mut pending = self.pending_requests.lock().await;
             pending.register(id)
         };
 
-        // Send the request
         let json = serde_json::to_string(&request)?;
         let write_txs = self.write_txs.read().await;
         if let Some(tx) = write_txs.get(conn_type) {
@@ -209,7 +200,6 @@ impl WebsocketClient {
             return Err(OkxError::Ws(format!("No {conn_type} connection")));
         }
 
-        // Wait for response with timeout
         let response = tokio::time::timeout(std::time::Duration::from_secs(10), rx)
             .await
             .map_err(|_| OkxError::Ws("WS API request timed out".into()))?
@@ -227,7 +217,6 @@ impl WebsocketClient {
 
     /// Ensure a connection of the given type is established.
     async fn ensure_connected(&self, conn_type: WsConnectionType) -> OkxResult<()> {
-        // Check if already connected
         {
             let store = self.store.read().await;
             if let Some(conn) = store.get(conn_type) {
@@ -239,7 +228,6 @@ impl WebsocketClient {
             }
         }
 
-        // Connect
         self.connect(conn_type).await
     }
 
@@ -248,7 +236,6 @@ impl WebsocketClient {
         let url = self.config.ws_url(conn_type);
         info!("Connecting WS {conn_type} to {url}");
 
-        // Update store state
         {
             let mut store = self.store.write().await;
             let conn = store.get_or_create(conn_type);
@@ -257,19 +244,13 @@ impl WebsocketClient {
 
         let ws = connection::connect(url).await?;
 
-        // Split into read/write
         let (mut write, read) = futures_util::StreamExt::split(ws);
-
-        // Create write channel
         let (write_tx, mut write_rx) = mpsc::unbounded_channel::<String>();
-
-        // Store the write channel
         {
             let mut write_txs = self.write_txs.write().await;
             write_txs.set(conn_type, write_tx.clone());
         }
 
-        // Spawn the write loop
         tokio::spawn(async move {
             use futures_util::SinkExt;
             while let Some(msg) = write_rx.recv().await {
@@ -281,7 +262,6 @@ impl WebsocketClient {
             debug!("WS {conn_type} write loop ended");
         });
 
-        // Spawn the heartbeat
         let (hb_stop_tx, hb_stop_rx) = tokio::sync::oneshot::channel();
         let hb_tx = write_tx.clone();
         let ping_interval = self.config.ping_interval;
@@ -289,12 +269,10 @@ impl WebsocketClient {
             heartbeat::heartbeat_loop(hb_tx, ping_interval, hb_stop_rx).await;
         });
 
-        // Spawn the message processing loop
         let event_tx = self.event_tx.clone();
         let (msg_tx, mut msg_rx) = mpsc::unbounded_channel();
         let read_stream = futures_util::stream::StreamExt::map(read, |r| r);
 
-        // Read loop task
         tokio::spawn(async move {
             use futures_util::StreamExt;
             let mut read_stream = read_stream;
@@ -321,7 +299,6 @@ impl WebsocketClient {
             }
         });
 
-        // Message processing task
         let store = self.store.clone();
         let pending_requests = self.pending_requests.clone();
         let write_txs = self.write_txs.clone();
@@ -337,7 +314,6 @@ impl WebsocketClient {
                             conn.is_authenticated = true;
                             conn.state = ConnectionState::Authenticated;
 
-                            // Subscribe to any pending private topics
                             let pending: Vec<_> = conn.pending_topics.drain().collect();
                             if !pending.is_empty() {
                                 let req = WsSubRequest::subscribe(pending.clone());
@@ -367,11 +343,9 @@ impl WebsocketClient {
                         conn.state = ConnectionState::Disconnected;
                         conn.is_authenticated = false;
 
-                        // Reject all pending API requests
                         let mut pending = pending_requests.lock().await;
                         pending.reject_all();
 
-                        // Clean up write channel
                         let mut wt = write_txs.write().await;
                         wt.remove(conn_type);
 
@@ -380,22 +354,18 @@ impl WebsocketClient {
                     _ => {}
                 }
 
-                // Broadcast to all subscribers
                 let _ = event_tx.send(msg);
             }
 
-            // Stop heartbeat on exit
             let _ = hb_stop_tx.send(());
         });
 
-        // Update state to connected
         {
             let mut s = self.store.write().await;
             let conn = s.get_or_create(conn_type);
             conn.state = ConnectionState::Connected;
         }
 
-        // Auto-login for private/business connections
         if conn_type != WsConnectionType::Public {
             if let Some(creds) = &self.config.client_config.credentials {
                 let login_req = auth::build_login_request(creds)?;
@@ -422,7 +392,6 @@ impl WebsocketClient {
         conn_type: WsConnectionType,
         args: Vec<WsSubscriptionArg>,
     ) -> OkxResult<()> {
-        // For private connections, queue topics if not yet authenticated
         if conn_type != WsConnectionType::Public {
             let store = self.store.read().await;
             if let Some(conn) = store.get(conn_type) {
@@ -447,7 +416,6 @@ impl WebsocketClient {
                 .map_err(|_| OkxError::Ws("Write channel closed".into()))?;
         }
 
-        // Track subscribed topics
         let mut store = self.store.write().await;
         let conn = store.get_or_create(conn_type);
         for arg in args {
@@ -472,7 +440,6 @@ impl WebsocketClient {
                 .map_err(|_| OkxError::Ws("Write channel closed".into()))?;
         }
 
-        // Remove from tracked topics
         let mut store = self.store.write().await;
         let conn = store.get_or_create(conn_type);
         for arg in &args {

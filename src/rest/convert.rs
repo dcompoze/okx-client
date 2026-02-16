@@ -4,7 +4,6 @@ use crate::types::request::convert::*;
 use crate::types::response::convert::*;
 
 impl RestClient {
-    // ──────────────────── Convert ────────────────────
 
     /// Get convert currencies.
     /// GET /api/v5/asset/convert/currencies

@@ -4,7 +4,6 @@ use crate::types::request::subaccount::*;
 use crate::types::response::subaccount::*;
 
 impl RestClient {
-    // ──────────────────── Sub-accounts ────────────────────
 
     /// Get sub-account list.
     /// GET /api/v5/users/subaccount/list

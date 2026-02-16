@@ -15,12 +15,6 @@ pub enum SigningAlgorithm {
 }
 
 /// Auto-detect the signing algorithm from the secret key format.
-///
-/// - If the secret contains "PRIVATE KEY", it's a PEM key:
-///   - If it contains "RSA PRIVATE KEY", use RSA.
-///   - If the key is short (<= 150 chars), use Ed25519.
-///   - Otherwise, use RSA.
-/// - Otherwise, use HMAC-SHA256 (the default for OKX).
 pub fn detect_signing_algorithm(secret: &str) -> SigningAlgorithm {
     if secret.contains("PRIVATE KEY") {
         if secret.contains("RSA PRIVATE KEY") {
@@ -82,25 +76,29 @@ mod tests {
 
     #[test]
     fn test_detect_rsa() {
-        let key = "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----";
-        assert_eq!(
-            detect_signing_algorithm(key),
-            SigningAlgorithm::RsaPkcs1v15
-        );
+        let key =
+            "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...\n-----END RSA PRIVATE KEY-----";
+        assert_eq!(detect_signing_algorithm(key), SigningAlgorithm::RsaPkcs1v15);
     }
 
     #[test]
     fn test_detect_ed25519() {
-        // Short PEM key (<= 150 chars)
-        let key = "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIDk=\n-----END PRIVATE KEY-----";
+        // Short PEM key (`<= 150` chars).
+        let key =
+            "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIDk=\n-----END PRIVATE KEY-----";
         assert_eq!(detect_signing_algorithm(key), SigningAlgorithm::Ed25519);
     }
 
     #[test]
     fn test_sign_rest() {
         let secret = SecretString::from("test-secret".to_string());
-        let result =
-            sign_rest("2024-01-15T12:30:45.123Z", "GET", "/api/v5/account/balance", "", &secret);
+        let result = sign_rest(
+            "2024-01-15T12:30:45.123Z",
+            "GET",
+            "/api/v5/account/balance",
+            "",
+            &secret,
+        );
         assert!(result.is_ok());
     }
 

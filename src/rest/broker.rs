@@ -2,7 +2,6 @@ use crate::error::OkxResult;
 use crate::rest::RestClient;
 
 impl RestClient {
-    // ──────────────────── Broker ────────────────────
 
     /// Get broker account info.
     /// GET /api/v5/broker/nd/info

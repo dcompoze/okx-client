@@ -2,7 +2,6 @@ use crate::error::OkxResult;
 use crate::rest::RestClient;
 
 impl RestClient {
-    // ──────────────────── Signal Bot ────────────────────
 
     /// Create a signal.
     /// POST /api/v5/tradingBot/signal/create-signal

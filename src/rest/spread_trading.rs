@@ -2,7 +2,6 @@ use crate::error::OkxResult;
 use crate::rest::RestClient;
 
 impl RestClient {
-    // ──────────────────── Spread Trading ────────────────────
 
     /// Place a spread order.
     /// POST /api/v5/sprd/order

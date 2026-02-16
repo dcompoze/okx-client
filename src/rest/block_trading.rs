@@ -2,7 +2,6 @@ use crate::error::OkxResult;
 use crate::rest::RestClient;
 
 impl RestClient {
-    // ──────────────────── Block Trading ────────────────────
 
     /// Create an RFQ.
     /// POST /api/v5/rfq/create-rfq

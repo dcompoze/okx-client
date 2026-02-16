@@ -11,7 +11,7 @@ pub async fn heartbeat_loop(
     mut stop_rx: tokio::sync::oneshot::Receiver<()>,
 ) {
     let mut ticker = tokio::time::interval(interval);
-    // Skip the first immediate tick
+    // Skip the first immediate tick.
     ticker.tick().await;
 
     loop {

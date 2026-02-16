@@ -96,21 +96,21 @@ impl RestClient {
 
     /// Generate an ISO 8601 timestamp for REST signing.
     fn timestamp() -> String {
-        // Use system time to produce ISO 8601 format
+        // Use system time to build an ISO 8601 timestamp.
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .expect("system time is before unix epoch");
         let secs = now.as_secs();
         let millis = now.subsec_millis();
 
-        // Convert to datetime components manually (no chrono dependency)
+        // Convert to datetime components without `chrono`.
         let days = secs / 86400;
         let time_secs = secs % 86400;
         let hours = time_secs / 3600;
         let minutes = (time_secs % 3600) / 60;
         let seconds = time_secs % 60;
 
-        // Calculate year/month/day from days since epoch
+        // Calculate `year`, `month`, and `day` from days since epoch.
         let (year, month, day) = days_to_date(days);
 
         format!(
@@ -184,7 +184,6 @@ impl RestClient {
         }
     }
 
-    // ──────────────────── Public (unsigned) methods ────────────────────
 
     /// Public GET request.
     #[instrument(skip(self, params), fields(endpoint))]
@@ -233,7 +232,6 @@ impl RestClient {
         parsed.into_result()
     }
 
-    // ──────────────────── Private (signed) methods ────────────────────
 
     /// Signed GET request (for private endpoints).
     #[instrument(skip(self, params), fields(endpoint))]
@@ -329,7 +327,7 @@ fn inject_program_tag(value: &serde_json::Value) -> OkxResult<String> {
 
 /// Convert days since Unix epoch to (year, month, day).
 fn days_to_date(total_days: u64) -> (u64, u64, u64) {
-    // Algorithm from http://howardhinnant.github.io/date_algorithms.html
+    // Based on http://howardhinnant.github.io/date_algorithms.html.
     let z = total_days + 719468;
     let era = z / 146097;
     let doe = z - era * 146097;
@@ -350,7 +348,7 @@ mod tests {
     #[test]
     fn test_timestamp_format() {
         let ts = RestClient::timestamp();
-        // Should match pattern: 2024-01-15T12:30:45.123Z
+        // Expected format: `2024-01-15T12:30:45.123Z`.
         assert!(ts.ends_with('Z'));
         assert_eq!(ts.len(), 24);
         assert_eq!(&ts[4..5], "-");
@@ -369,7 +367,7 @@ mod tests {
 
     #[test]
     fn test_days_to_date_known() {
-        // 2024-01-15 = day 19737
+        // `2024-01-15` is day `19737`.
         let (y, m, d) = days_to_date(19737);
         assert_eq!((y, m, d), (2024, 1, 15));
     }

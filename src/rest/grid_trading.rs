@@ -2,7 +2,6 @@ use crate::error::OkxResult;
 use crate::rest::RestClient;
 
 impl RestClient {
-    // ──────────────────── Grid Trading ────────────────────
 
     /// Place a grid algo order (spot grid, contract grid, moon grid).
     /// POST /api/v5/tradingBot/grid/order-algo

@@ -2,7 +2,6 @@ use crate::error::OkxResult;
 use crate::rest::RestClient;
 
 impl RestClient {
-    // ──────────────────── Copy Trading ────────────────────
 
     /// Get existing leading positions.
     /// GET /api/v5/copytrading/current-subpositions

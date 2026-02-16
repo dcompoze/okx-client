@@ -4,7 +4,6 @@ use crate::types::request::market::*;
 use crate::types::response::market::*;
 
 impl RestClient {
-    // ──────────────────── Market Data (Public) ────────────────────
 
     /// Get tickers for all instruments of a given type.
     /// GET /api/v5/market/tickers
