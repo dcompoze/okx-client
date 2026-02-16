@@ -88,6 +88,49 @@ pub fn parse_ws_message(text: &str) -> Option<WsMessage> {
     None
 }
 
+/// Run the message read loop for a WebSocket connection.
+/// Reads messages from the WebSocket and sends them to the channel.
+pub async fn read_loop(
+    mut ws: WsStream,
+    conn_type: WsConnectionType,
+    tx: mpsc::UnboundedSender<WsMessage>,
+) {
+    info!("WS {conn_type} read loop started");
+
+    while let Some(msg_result) = ws.next().await {
+        match msg_result {
+            Ok(Message::Text(text)) => {
+                if let Some(parsed) = parse_ws_message(&text) {
+                    if tx.send(parsed).is_err() {
+                        debug!("WS {conn_type} receiver dropped, exiting read loop");
+                        break;
+                    }
+                }
+            }
+            Ok(Message::Close(_)) => {
+                info!("WS {conn_type} received close frame");
+                let _ = tx.send(WsMessage::Disconnected(conn_type));
+                break;
+            }
+            Ok(Message::Ping(data)) => {
+                debug!("WS {conn_type} received ping");
+                // tungstenite auto-responds with pong
+                let _ = data;
+            }
+            Ok(_) => {
+                // Binary, Pong, Frame - generally ignored
+            }
+            Err(e) => {
+                error!("WS {conn_type} read error: {e}");
+                let _ = tx.send(WsMessage::Disconnected(conn_type));
+                break;
+            }
+        }
+    }
+
+    info!("WS {conn_type} read loop ended");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,47 +197,4 @@ mod tests {
         let msg = parse_ws_message(json);
         assert!(msg.is_none());
     }
-}
-
-/// Run the message read loop for a WebSocket connection.
-/// Reads messages from the WebSocket and sends them to the channel.
-pub async fn read_loop(
-    mut ws: WsStream,
-    conn_type: WsConnectionType,
-    tx: mpsc::UnboundedSender<WsMessage>,
-) {
-    info!("WS {conn_type} read loop started");
-
-    while let Some(msg_result) = ws.next().await {
-        match msg_result {
-            Ok(Message::Text(text)) => {
-                if let Some(parsed) = parse_ws_message(&text) {
-                    if tx.send(parsed).is_err() {
-                        debug!("WS {conn_type} receiver dropped, exiting read loop");
-                        break;
-                    }
-                }
-            }
-            Ok(Message::Close(_)) => {
-                info!("WS {conn_type} received close frame");
-                let _ = tx.send(WsMessage::Disconnected(conn_type));
-                break;
-            }
-            Ok(Message::Ping(data)) => {
-                debug!("WS {conn_type} received ping");
-                // tungstenite auto-responds with pong
-                let _ = data;
-            }
-            Ok(_) => {
-                // Binary, Pong, Frame - generally ignored
-            }
-            Err(e) => {
-                error!("WS {conn_type} read error: {e}");
-                let _ = tx.send(WsMessage::Disconnected(conn_type));
-                break;
-            }
-        }
-    }
-
-    info!("WS {conn_type} read loop ended");
 }

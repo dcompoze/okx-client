@@ -211,6 +211,7 @@ impl RestClient {
 
     /// Public POST request.
     #[instrument(skip(self, params), fields(endpoint))]
+    #[allow(dead_code)]
     pub(crate) async fn post<T, P>(&self, endpoint: &str, params: &P) -> OkxResult<Vec<T>>
     where
         T: DeserializeOwned,
