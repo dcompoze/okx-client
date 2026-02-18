@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Pagination parameters for cursor-based pagination.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Pagination {
     /// Pagination of data to return records earlier than the requested ID.
@@ -16,5 +16,5 @@ pub struct Pagination {
 }
 
 /// Empty request parameters (for endpoints with no params).
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct Empty {}

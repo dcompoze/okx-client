@@ -2,12 +2,12 @@ use secrecy::ExposeSecret;
 
 use crate::auth;
 use crate::config::Credentials;
-use crate::error::OkxResult;
+use crate::error::{OkxError, OkxResult};
 use crate::types::ws::requests::{WsLoginArg, WsLoginRequest};
 
 /// Build a WebSocket login request from credentials.
 pub fn build_login_request(creds: &Credentials) -> OkxResult<WsLoginRequest> {
-    let timestamp = ws_timestamp();
+    let timestamp = ws_timestamp()?;
 
     let signature = auth::sign_ws(&timestamp.to_string(), &creds.api_secret)?;
 
@@ -23,9 +23,9 @@ pub fn build_login_request(creds: &Credentials) -> OkxResult<WsLoginRequest> {
 }
 
 /// Generate a Unix timestamp (seconds) for WS auth.
-fn ws_timestamp() -> u64 {
-    std::time::SystemTime::now()
+fn ws_timestamp() -> OkxResult<u64> {
+    Ok(std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .expect("system time is before unix epoch")
-        .as_secs()
+        .map_err(|_| OkxError::Config("system time is before Unix epoch".into()))?
+        .as_secs())
 }

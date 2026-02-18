@@ -3,7 +3,7 @@ use serde::Serialize;
 use super::channels::WsSubscriptionArg;
 
 /// WebSocket subscribe/unsubscribe request.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct WsSubRequest {
     pub op: String,
     pub args: Vec<WsSubscriptionArg>,

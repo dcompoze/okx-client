@@ -95,11 +95,11 @@ impl RestClient {
     }
 
     /// Generate an ISO 8601 timestamp for REST signing.
-    fn timestamp() -> String {
+    fn timestamp() -> OkxResult<String> {
         // Use system time to build an ISO 8601 timestamp.
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .expect("system time is before unix epoch");
+            .map_err(|_| OkxError::Config("system time is before Unix epoch".into()))?;
         let secs = now.as_secs();
         let millis = now.subsec_millis();
 
@@ -113,9 +113,9 @@ impl RestClient {
         // Calculate `year`, `month`, and `day` from days since epoch.
         let (year, month, day) = days_to_date(days);
 
-        format!(
+        Ok(format!(
             "{year:04}-{month:02}-{day:02}T{hours:02}:{minutes:02}:{seconds:02}.{millis:03}Z"
-        )
+        ))
     }
 
     /// Build auth headers for signed requests.
@@ -244,7 +244,7 @@ impl RestClient {
         T: DeserializeOwned,
         P: Serialize,
     {
-        let timestamp = Self::timestamp();
+        let timestamp = Self::timestamp()?;
         let qs = if let Some(p) = params {
             Self::serialize_query_string(p)?
         } else {
@@ -273,7 +273,7 @@ impl RestClient {
         T: DeserializeOwned,
         P: Serialize,
     {
-        let timestamp = Self::timestamp();
+        let timestamp = Self::timestamp()?;
         let body = inject_program_tag(&serde_json::to_value(params)?)?;
 
         let auth_headers = self.auth_headers(&timestamp, "POST", endpoint, &body)?;
@@ -347,7 +347,7 @@ mod tests {
 
     #[test]
     fn test_timestamp_format() {
-        let ts = RestClient::timestamp();
+        let ts = RestClient::timestamp().unwrap();
         // Expected format: `2024-01-15T12:30:45.123Z`.
         assert!(ts.ends_with('Z'));
         assert_eq!(ts.len(), 24);

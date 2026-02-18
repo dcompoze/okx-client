@@ -84,6 +84,27 @@ impl WriteChannels {
     }
 }
 
+/// Partition subscription args by their target connection type.
+fn partition_args(
+    args: Vec<WsSubscriptionArg>,
+) -> (
+    Vec<WsSubscriptionArg>,
+    Vec<WsSubscriptionArg>,
+    Vec<WsSubscriptionArg>,
+) {
+    let mut public = Vec::new();
+    let mut private = Vec::new();
+    let mut business = Vec::new();
+    for arg in args {
+        match router::route_subscription(&arg) {
+            WsConnectionType::Public => public.push(arg),
+            WsConnectionType::Private => private.push(arg),
+            WsConnectionType::Business => business.push(arg),
+        }
+    }
+    (public, private, business)
+}
+
 impl WebsocketClient {
     /// Create a new WebSocket client with the given configuration.
     pub fn new(config: WsConfig) -> Self {
@@ -108,17 +129,7 @@ impl WebsocketClient {
         &self,
         args: Vec<WsSubscriptionArg>,
     ) -> OkxResult<broadcast::Receiver<WsMessage>> {
-        let mut public_args = Vec::new();
-        let mut private_args = Vec::new();
-        let mut business_args = Vec::new();
-
-        for arg in &args {
-            match router::route_subscription(arg) {
-                WsConnectionType::Public => public_args.push(arg.clone()),
-                WsConnectionType::Private => private_args.push(arg.clone()),
-                WsConnectionType::Business => business_args.push(arg.clone()),
-            }
-        }
+        let (public_args, private_args, business_args) = partition_args(args);
 
         if !public_args.is_empty() {
             self.ensure_connected(WsConnectionType::Public).await?;
@@ -141,17 +152,7 @@ impl WebsocketClient {
 
     /// Unsubscribe from one or more channels.
     pub async fn unsubscribe(&self, args: Vec<WsSubscriptionArg>) -> OkxResult<()> {
-        let mut public_args = Vec::new();
-        let mut private_args = Vec::new();
-        let mut business_args = Vec::new();
-
-        for arg in &args {
-            match router::route_subscription(arg) {
-                WsConnectionType::Public => public_args.push(arg.clone()),
-                WsConnectionType::Private => private_args.push(arg.clone()),
-                WsConnectionType::Business => business_args.push(arg.clone()),
-            }
-        }
+        let (public_args, private_args, business_args) = partition_args(args);
 
         if !public_args.is_empty() {
             self.send_unsubscribe(WsConnectionType::Public, public_args)
@@ -184,14 +185,12 @@ impl WebsocketClient {
         self.ensure_connected(conn_type).await?;
 
         let request = api::build_api_request(op, args);
-        let id = request.id.clone();
+        let json = serde_json::to_string(&request)?;
 
         let rx = {
             let mut pending = self.pending_requests.lock().await;
-            pending.register(id)
+            pending.register(request.id)
         };
-
-        let json = serde_json::to_string(&request)?;
         let write_txs = self.write_txs.read().await;
         if let Some(tx) = write_txs.get(conn_type) {
             tx.send(json)
@@ -271,12 +270,11 @@ impl WebsocketClient {
 
         let event_tx = self.event_tx.clone();
         let (msg_tx, mut msg_rx) = mpsc::unbounded_channel();
-        let read_stream = futures_util::stream::StreamExt::map(read, |r| r);
 
         tokio::spawn(async move {
             use futures_util::StreamExt;
-            let mut read_stream = read_stream;
-            while let Some(msg_result) = read_stream.next().await {
+            let mut read = read;
+            while let Some(msg_result) = read.next().await {
                 match msg_result {
                     Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
                         if let Some(parsed) = connection::parse_ws_message(&text) {
@@ -302,7 +300,6 @@ impl WebsocketClient {
         let store = self.store.clone();
         let pending_requests = self.pending_requests.clone();
         let write_txs = self.write_txs.clone();
-        let _config = self.config.clone();
         tokio::spawn(async move {
             while let Some(msg) = msg_rx.recv().await {
                 match &msg {
@@ -316,7 +313,7 @@ impl WebsocketClient {
 
                             let pending: Vec<_> = conn.pending_topics.drain().collect();
                             if !pending.is_empty() {
-                                let req = WsSubRequest::subscribe(pending.clone());
+                                let req = WsSubRequest::subscribe(pending);
                                 if let Ok(json) = serde_json::to_string(&req) {
                                     let wt = write_txs.read().await;
                                     if let Some(tx) = wt.get(conn_type) {
@@ -324,7 +321,7 @@ impl WebsocketClient {
                                     }
                                 }
                                 let conn = s.get_or_create(conn_type);
-                                for topic in pending {
+                                for topic in req.args {
                                     conn.subscribed_topics.insert(topic);
                                 }
                             }
@@ -407,7 +404,7 @@ impl WebsocketClient {
             }
         }
 
-        let req = WsSubRequest::subscribe(args.clone());
+        let req = WsSubRequest::subscribe(args);
         let json = serde_json::to_string(&req)?;
 
         let write_txs = self.write_txs.read().await;
@@ -418,7 +415,7 @@ impl WebsocketClient {
 
         let mut store = self.store.write().await;
         let conn = store.get_or_create(conn_type);
-        for arg in args {
+        for arg in req.args {
             conn.subscribed_topics.insert(arg);
         }
 
@@ -431,7 +428,7 @@ impl WebsocketClient {
         conn_type: WsConnectionType,
         args: Vec<WsSubscriptionArg>,
     ) -> OkxResult<()> {
-        let req = WsSubRequest::unsubscribe(args.clone());
+        let req = WsSubRequest::unsubscribe(args);
         let json = serde_json::to_string(&req)?;
 
         let write_txs = self.write_txs.read().await;
@@ -442,7 +439,7 @@ impl WebsocketClient {
 
         let mut store = self.store.write().await;
         let conn = store.get_or_create(conn_type);
-        for arg in &args {
+        for arg in &req.args {
             conn.subscribed_topics.remove(arg);
         }
 

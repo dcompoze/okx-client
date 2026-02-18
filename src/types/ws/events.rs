@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use super::channels::WsSubscriptionArg;
 
 /// A WebSocket data event (pushed data from subscriptions).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct WsDataEvent {
     /// The subscription arg that identifies the channel and parameters.
     pub arg: WsSubscriptionArg,
@@ -15,7 +15,7 @@ pub struct WsDataEvent {
 }
 
 /// A WebSocket event (login, subscribe, unsubscribe, error, etc.).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct WsEvent {
     pub event: String,
     #[serde(default)]
@@ -32,7 +32,7 @@ pub struct WsEvent {
 }
 
 /// Events emitted by the WebSocket client.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum WsMessage {
     /// Data update from a subscription.
     Data(WsDataEvent),
@@ -49,7 +49,7 @@ pub enum WsMessage {
 }
 
 /// WS API response (for order management via WebSocket).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WsApiResponse {
     pub id: String,
     pub op: String,
