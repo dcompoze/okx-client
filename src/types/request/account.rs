@@ -346,3 +346,79 @@ pub struct SetAccountLevelRequest {
     /// "3" - Multi-currency margin, "4" - Portfolio margin.
     pub acct_lv: String,
 }
+
+/// Change position margin request.
+///
+/// Increase or decrease margin for an isolated position.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangePositionMarginRequest {
+    /// Instrument ID, e.g. "BTC-USDT-SWAP".
+    pub inst_id: String,
+    /// Position side.
+    pub pos_side: PositionSide,
+    /// Operation: "add" to increase margin, "reduce" to decrease.
+    #[serde(rename = "type")]
+    pub type_: String,
+    /// Amount to add or reduce.
+    pub amt: String,
+    /// Currency. Only applicable to `MARGIN`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ccy: Option<String>,
+    /// Whether to automatically borrow funds when adding margin.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto: Option<bool>,
+    /// Whether the transferred amount can be automatically used for borrowing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub loan_trans: Option<bool>,
+}
+
+/// Borrow or repay in quick margin mode.
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BorrowRepayRequest {
+    /// Currency, e.g. "BTC".
+    pub ccy: String,
+    /// Direction: "borrow" or "repay".
+    pub side: String,
+    /// Amount to borrow or repay.
+    pub amt: String,
+    /// Order ID for repayment. Required when `side` is "repay".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ord_id: Option<String>,
+}
+
+/// Get borrow/repay history request.
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GetBorrowRepayHistoryRequest {
+    /// Currency, e.g. "BTC".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ccy: Option<String>,
+    /// Pagination of data to return records earlier than the requested timestamp.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after: Option<String>,
+    /// Pagination of data to return records newer than the requested timestamp.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
+    /// Number of results per request. Maximum 100; default 100.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<String>,
+}
+
+/// Get greeks request.
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GetGreeksRequest {
+    /// Currency, e.g. "BTC". Returns all currencies if omitted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ccy: Option<String>,
+}
+
+/// Set auto loan request.
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SetAutoLoanRequest {
+    /// Whether to enable automatic borrowing.
+    pub auto_loan: bool,
+}

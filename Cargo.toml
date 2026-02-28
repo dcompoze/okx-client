@@ -1,7 +1,12 @@
 [package]
 name = "okx-client"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2021"
+description = "Async Rust client for the OKX exchange API v5 (REST + WebSocket)"
+license = "MIT"
+repository = "https://github.com/dcompoze/okx-client"
+keywords = ["okx", "crypto", "trading", "exchange", "websocket"]
+categories = ["api-bindings", "finance"]
 
 [lib]
 path = "src/lib.rs"

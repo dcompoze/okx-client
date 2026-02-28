@@ -202,4 +202,54 @@ impl RestClient {
         self.post_signed("/api/v5/account/set-account-level", params)
             .await
     }
+
+    /// Increase or decrease margin for an isolated position.
+    /// POST /api/v5/account/position/margin-balance
+    pub async fn change_position_margin(
+        &self,
+        params: &ChangePositionMarginRequest,
+    ) -> OkxResult<Vec<serde_json::Value>> {
+        self.post_signed("/api/v5/account/position/margin-balance", params)
+            .await
+    }
+
+    /// Borrow or repay in quick margin mode.
+    /// POST /api/v5/account/borrow-repay
+    pub async fn borrow_repay(
+        &self,
+        params: &BorrowRepayRequest,
+    ) -> OkxResult<Vec<serde_json::Value>> {
+        self.post_signed("/api/v5/account/borrow-repay", params)
+            .await
+    }
+
+    /// Get borrow and repay history in quick margin mode.
+    /// GET /api/v5/account/borrow-repay-history
+    pub async fn get_borrow_repay_history(
+        &self,
+        params: &GetBorrowRepayHistoryRequest,
+    ) -> OkxResult<Vec<serde_json::Value>> {
+        self.get_signed("/api/v5/account/borrow-repay-history", Some(params))
+            .await
+    }
+
+    /// Get greeks.
+    /// GET /api/v5/account/greeks
+    pub async fn get_greeks(
+        &self,
+        params: &GetGreeksRequest,
+    ) -> OkxResult<Vec<serde_json::Value>> {
+        self.get_signed("/api/v5/account/greeks", Some(params))
+            .await
+    }
+
+    /// Set whether to automatically borrow when transferring in.
+    /// POST /api/v5/account/set-auto-loan
+    pub async fn set_auto_loan(
+        &self,
+        params: &SetAutoLoanRequest,
+    ) -> OkxResult<Vec<SetResult>> {
+        self.post_signed("/api/v5/account/set-auto-loan", params)
+            .await
+    }
 }

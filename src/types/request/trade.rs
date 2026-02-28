@@ -2,6 +2,13 @@ use serde::Serialize;
 
 use crate::types::enums::*;
 
+fn serialize_csv<S>(values: &[String], serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(&values.join(","))
+}
+
 /// Place a single order.
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -454,4 +461,87 @@ pub struct CancelAllAfterRequest {
     /// Order tag.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
+}
+
+/// Easy convert request.
+///
+/// Convert small assets into OKB.
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct EasyConvertRequest {
+    /// Source currencies to convert from. Comma-separated list.
+    #[serde(serialize_with = "serialize_csv")]
+    pub from_ccy: Vec<String>,
+    /// Target currency to convert to.
+    pub to_ccy: String,
+}
+
+/// Get easy convert history request.
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GetEasyConvertHistoryRequest {
+    /// Pagination of data to return records earlier than the requested timestamp.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after: Option<String>,
+    /// Pagination of data to return records newer than the requested timestamp.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
+    /// Number of results per request. Maximum 100; default 100.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<String>,
+}
+
+/// One-click repay request.
+///
+/// Repay cross margin debt with a single click.
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OneClickRepayRequest {
+    /// Currencies with debt to repay. Comma-separated list.
+    #[serde(serialize_with = "serialize_csv")]
+    pub debt_ccy: Vec<String>,
+    /// Currency to use for repayment.
+    pub repay_ccy: String,
+}
+
+/// Get one-click repay history request.
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GetOneClickRepayHistoryRequest {
+    /// Pagination of data to return records earlier than the requested timestamp.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after: Option<String>,
+    /// Pagination of data to return records newer than the requested timestamp.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
+    /// Number of results per request. Maximum 100; default 100.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn easy_convert_serializes_currency_list_as_csv() {
+        let req = EasyConvertRequest {
+            from_ccy: vec!["BTC".into(), "ETH".into()],
+            to_ccy: "USDT".into(),
+        };
+
+        let value = serde_json::to_value(req).unwrap();
+        assert_eq!(value["fromCcy"], "BTC,ETH");
+    }
+
+    #[test]
+    fn one_click_repay_serializes_currency_list_as_csv() {
+        let req = OneClickRepayRequest {
+            debt_ccy: vec!["BTC".into(), "ETH".into()],
+            repay_ccy: "USDT".into(),
+        };
+
+        let value = serde_json::to_value(req).unwrap();
+        assert_eq!(value["debtCcy"], "BTC,ETH");
+    }
 }

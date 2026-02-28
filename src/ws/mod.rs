@@ -1,4 +1,5 @@
 pub mod api;
+pub mod api_client;
 pub mod auth;
 pub mod connection;
 pub mod heartbeat;
@@ -8,8 +9,9 @@ pub mod types;
 
 use std::sync::Arc;
 
+use futures_util::future::BoxFuture;
 use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 use crate::error::{OkxError, OkxResult};
 use crate::types::ws::channels::WsSubscriptionArg;
@@ -24,6 +26,9 @@ use self::types::WsConfig;
 ///
 /// Manages multiple connections (public, private, business) and
 /// automatically routes subscriptions to the correct connection.
+///
+/// The client is cheap to clone -- all clones share the same underlying
+/// connections and state.
 ///
 /// # Example
 ///
@@ -42,16 +47,17 @@ use self::types::WsConfig;
 /// println!("{msg:?}");
 /// # }
 /// ```
+#[derive(Clone)]
 pub struct WebsocketClient {
     config: WsConfig,
     store: Arc<RwLock<WsStore>>,
     event_tx: broadcast::Sender<WsMessage>,
     pending_requests: Arc<Mutex<PendingRequests>>,
-    /// Channel for sending raw text to write loops.
+    /// Channels for sending raw text to the per-connection write loops.
     write_txs: Arc<RwLock<WriteChannels>>,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct WriteChannels {
     public: Option<mpsc::UnboundedSender<String>>,
     private: Option<mpsc::UnboundedSender<String>>,
@@ -124,6 +130,7 @@ impl WebsocketClient {
     }
 
     /// Subscribe to one or more channels.
+    ///
     /// Automatically connects if needed and routes to the correct connection.
     pub async fn subscribe(
         &self,
@@ -194,9 +201,9 @@ impl WebsocketClient {
         let write_txs = self.write_txs.read().await;
         if let Some(tx) = write_txs.get(conn_type) {
             tx.send(json)
-                .map_err(|_| OkxError::Ws("Write channel closed".into()))?;
+                .map_err(|_| OkxError::Ws("write channel closed".into()))?;
         } else {
-            return Err(OkxError::Ws(format!("No {conn_type} connection")));
+            return Err(OkxError::Ws(format!("no {conn_type} connection")));
         }
 
         let response = tokio::time::timeout(std::time::Duration::from_secs(10), rx)
@@ -232,74 +239,108 @@ impl WebsocketClient {
 
     /// Establish a WebSocket connection.
     async fn connect(&self, conn_type: WsConnectionType) -> OkxResult<()> {
-        let url = self.config.ws_url(conn_type);
+        self.clone().connect_inner(conn_type).await
+    }
+
+    /// Send a subscribe message on a specific connection.
+    async fn send_subscribe(
+        &self,
+        conn_type: WsConnectionType,
+        args: Vec<WsSubscriptionArg>,
+    ) -> OkxResult<()> {
+        if conn_type != WsConnectionType::Public {
+            let store = self.store.read().await;
+            if let Some(conn) = store.get(conn_type) {
+                if !conn.is_authenticated {
+                    drop(store);
+                    let mut store = self.store.write().await;
+                    let conn = store.get_or_create(conn_type);
+                    for arg in args {
+                        conn.pending_topics.insert(arg);
+                    }
+                    return Ok(());
+                }
+            }
+        }
+
+        let req = WsSubRequest::subscribe(args);
+        let json = serde_json::to_string(&req)?;
+
+        let write_txs = self.write_txs.read().await;
+        if let Some(tx) = write_txs.get(conn_type) {
+            tx.send(json)
+                .map_err(|_| OkxError::Ws("write channel closed".into()))?;
+        }
+
+        let mut store = self.store.write().await;
+        let conn = store.get_or_create(conn_type);
+        for arg in req.args {
+            conn.subscribed_topics.insert(arg);
+        }
+
+        Ok(())
+    }
+
+    /// Send an unsubscribe message on a specific connection.
+    async fn send_unsubscribe(
+        &self,
+        conn_type: WsConnectionType,
+        args: Vec<WsSubscriptionArg>,
+    ) -> OkxResult<()> {
+        let req = WsSubRequest::unsubscribe(args);
+        let json = serde_json::to_string(&req)?;
+
+        let write_txs = self.write_txs.read().await;
+        if let Some(tx) = write_txs.get(conn_type) {
+            tx.send(json)
+                .map_err(|_| OkxError::Ws("write channel closed".into()))?;
+        }
+
+        let mut store = self.store.write().await;
+        let conn = store.get_or_create(conn_type);
+        for arg in &req.args {
+            conn.subscribed_topics.remove(arg);
+        }
+
+        Ok(())
+    }
+
+    /// Establish a WebSocket connection, taking `self` by value.
+    ///
+    /// Owning `self` (rather than borrowing) makes the returned future
+    /// provably `Send`, which is required when this is awaited inside a
+    /// `tokio::spawn` task (e.g. the auto-reconnect path).
+    fn connect_inner(self, conn_type: WsConnectionType) -> BoxFuture<'static, OkxResult<()>> {
+        Box::pin(async move {
+        let url = self.config.ws_url(conn_type).to_owned();
         info!("Connecting WS {conn_type} to {url}");
 
         {
             let mut store = self.store.write().await;
-            let conn = store.get_or_create(conn_type);
-            conn.state = ConnectionState::Connecting;
+            store.get_or_create(conn_type).state = ConnectionState::Connecting;
         }
 
-        let ws = connection::connect(url).await?;
+        let ws = connection::connect(&url).await?;
+        let (write_tx, mut msg_rx) = connection::spawn_io_tasks(ws, conn_type);
 
-        let (mut write, read) = futures_util::StreamExt::split(ws);
-        let (write_tx, mut write_rx) = mpsc::unbounded_channel::<String>();
-        {
-            let mut write_txs = self.write_txs.write().await;
-            write_txs.set(conn_type, write_tx.clone());
-        }
-
-        tokio::spawn(async move {
-            use futures_util::SinkExt;
-            while let Some(msg) = write_rx.recv().await {
-                if let Err(e) = write.send(tokio_tungstenite::tungstenite::Message::Text(msg.into())).await {
-                    error!("WS {conn_type} write error: {e}");
-                    break;
-                }
-            }
-            debug!("WS {conn_type} write loop ended");
-        });
-
-        let (hb_stop_tx, hb_stop_rx) = tokio::sync::oneshot::channel();
+        let (hb_stop_tx, hb_stop_rx) = tokio::sync::oneshot::channel::<()>();
         let hb_tx = write_tx.clone();
         let ping_interval = self.config.ping_interval;
         tokio::spawn(async move {
             heartbeat::heartbeat_loop(hb_tx, ping_interval, hb_stop_rx).await;
         });
 
+        {
+            let mut write_txs = self.write_txs.write().await;
+            write_txs.set(conn_type, write_tx.clone());
+        }
+
         let event_tx = self.event_tx.clone();
-        let (msg_tx, mut msg_rx) = mpsc::unbounded_channel();
-
-        tokio::spawn(async move {
-            use futures_util::StreamExt;
-            let mut read = read;
-            while let Some(msg_result) = read.next().await {
-                match msg_result {
-                    Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
-                        if let Some(parsed) = connection::parse_ws_message(&text) {
-                            if msg_tx.send(parsed).is_err() {
-                                break;
-                            }
-                        }
-                    }
-                    Ok(tokio_tungstenite::tungstenite::Message::Close(_)) => {
-                        let _ = msg_tx.send(WsMessage::Disconnected(conn_type));
-                        break;
-                    }
-                    Err(e) => {
-                        error!("WS {conn_type} read error: {e}");
-                        let _ = msg_tx.send(WsMessage::Disconnected(conn_type));
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-        });
-
+        let client_for_reconnect = self.clone();
         let store = self.store.clone();
         let pending_requests = self.pending_requests.clone();
         let write_txs = self.write_txs.clone();
+
         tokio::spawn(async move {
             while let Some(msg) = msg_rx.recv().await {
                 match &msg {
@@ -335,16 +376,77 @@ impl WebsocketClient {
                     }
                     WsMessage::Disconnected(_) => {
                         warn!("WS {conn_type} disconnected");
-                        let mut s = store.write().await;
-                        let conn = s.get_or_create(conn_type);
-                        conn.state = ConnectionState::Disconnected;
-                        conn.is_authenticated = false;
+                        {
+                            let mut s = store.write().await;
+                            let conn = s.get_or_create(conn_type);
+                            conn.state = ConnectionState::Disconnected;
+                            conn.is_authenticated = false;
+                        }
 
-                        let mut pending = pending_requests.lock().await;
-                        pending.reject_all();
+                        {
+                            let mut pending = pending_requests.lock().await;
+                            pending.reject_all();
+                        }
 
-                        let mut wt = write_txs.write().await;
-                        wt.remove(conn_type);
+                        {
+                            let mut wt = write_txs.write().await;
+                            wt.remove(conn_type);
+                        }
+
+                        if client_for_reconnect.config.auto_reconnect {
+                            let delay = client_for_reconnect.config.reconnect_delay;
+                            let client = client_for_reconnect.clone();
+                            tokio::spawn(async move {
+                                info!("WS {conn_type} reconnecting in {delay:?}");
+                                tokio::time::sleep(delay).await;
+
+                                // For authenticated connections, move subscribed topics into
+                                // pending so the login handler resubscribes them after auth.
+                                // For public connections, capture them for direct resubscription.
+                                let public_topics =
+                                    if conn_type == WsConnectionType::Public {
+                                        let s = client.store.read().await;
+                                        s.get(conn_type)
+                                            .map(|c| {
+                                                c.subscribed_topics
+                                                    .iter()
+                                                    .cloned()
+                                                    .collect::<Vec<_>>()
+                                            })
+                                            .unwrap_or_default()
+                                    } else {
+                                        let mut s = client.store.write().await;
+                                        let conn = s.get_or_create(conn_type);
+                                        let topics: Vec<_> =
+                                            conn.subscribed_topics.drain().collect();
+                                        for topic in &topics {
+                                            conn.pending_topics.insert(topic.clone());
+                                        }
+                                        Vec::new()
+                                    };
+
+                                // Keep a clone for resubscription since connect_inner
+                                // consumes `client`.
+                                let client_ref = client.clone();
+                                match client_ref.connect(conn_type).await {
+                                    Ok(()) => {
+                                        if !public_topics.is_empty() {
+                                            if let Err(e) = client_ref
+                                                .send_subscribe(conn_type, public_topics)
+                                                .await
+                                            {
+                                                error!(
+                                                    "WS {conn_type} resubscribe failed: {e}"
+                                                );
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("WS {conn_type} reconnect failed: {e}");
+                                    }
+                                }
+                            });
+                        }
 
                         break;
                     }
@@ -359,91 +461,26 @@ impl WebsocketClient {
 
         {
             let mut s = self.store.write().await;
-            let conn = s.get_or_create(conn_type);
-            conn.state = ConnectionState::Connected;
+            s.get_or_create(conn_type).state = ConnectionState::Connected;
         }
 
         if conn_type != WsConnectionType::Public {
-            if let Some(creds) = &self.config.client_config.credentials {
-                let login_req = auth::build_login_request(creds)?;
+            if let Some(creds) = self.config.client_config.credentials.clone() {
+                let login_req = auth::build_login_request(&creds)?;
                 let json = serde_json::to_string(&login_req)?;
                 let write_txs = self.write_txs.read().await;
                 if let Some(tx) = write_txs.get(conn_type) {
                     tx.send(json)
-                        .map_err(|_| OkxError::Ws("Write channel closed".into()))?;
+                        .map_err(|_| OkxError::Ws("write channel closed".into()))?;
                 }
             }
         }
 
-        let _ = self
-            .event_tx
-            .send(WsMessage::Connected(conn_type));
+        let _ = self.event_tx.send(WsMessage::Connected(conn_type));
 
         info!("WS {conn_type} connected");
         Ok(())
-    }
-
-    /// Send a subscribe message on a specific connection.
-    async fn send_subscribe(
-        &self,
-        conn_type: WsConnectionType,
-        args: Vec<WsSubscriptionArg>,
-    ) -> OkxResult<()> {
-        if conn_type != WsConnectionType::Public {
-            let store = self.store.read().await;
-            if let Some(conn) = store.get(conn_type) {
-                if !conn.is_authenticated {
-                    drop(store);
-                    let mut store = self.store.write().await;
-                    let conn = store.get_or_create(conn_type);
-                    for arg in args {
-                        conn.pending_topics.insert(arg);
-                    }
-                    return Ok(());
-                }
-            }
-        }
-
-        let req = WsSubRequest::subscribe(args);
-        let json = serde_json::to_string(&req)?;
-
-        let write_txs = self.write_txs.read().await;
-        if let Some(tx) = write_txs.get(conn_type) {
-            tx.send(json)
-                .map_err(|_| OkxError::Ws("Write channel closed".into()))?;
-        }
-
-        let mut store = self.store.write().await;
-        let conn = store.get_or_create(conn_type);
-        for arg in req.args {
-            conn.subscribed_topics.insert(arg);
-        }
-
-        Ok(())
-    }
-
-    /// Send an unsubscribe message on a specific connection.
-    async fn send_unsubscribe(
-        &self,
-        conn_type: WsConnectionType,
-        args: Vec<WsSubscriptionArg>,
-    ) -> OkxResult<()> {
-        let req = WsSubRequest::unsubscribe(args);
-        let json = serde_json::to_string(&req)?;
-
-        let write_txs = self.write_txs.read().await;
-        if let Some(tx) = write_txs.get(conn_type) {
-            tx.send(json)
-                .map_err(|_| OkxError::Ws("Write channel closed".into()))?;
-        }
-
-        let mut store = self.store.write().await;
-        let conn = store.get_or_create(conn_type);
-        for arg in &req.args {
-            conn.subscribed_topics.remove(arg);
-        }
-
-        Ok(())
+        })
     }
 
     /// Close all connections.

@@ -10,4 +10,5 @@ pub mod ws;
 pub use config::{ClientConfig, ClientConfigBuilder, Credentials, Region, TradingMode};
 pub use error::{OkxError, OkxResult};
 pub use rest::RestClient;
+pub use ws::api_client::WsApiClient;
 pub use ws::WebsocketClient;

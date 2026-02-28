@@ -187,4 +187,66 @@ impl RestClient {
         self.get_signed("/api/v5/trade/orders-algo-history", Some(params))
             .await
     }
+
+    /// Get the list of currencies available for easy convert.
+    /// GET /api/v5/trade/easy-convert-currency-list
+    pub async fn get_easy_convert_currency_list(&self) -> OkxResult<Vec<serde_json::Value>> {
+        self.get_signed::<serde_json::Value, ()>(
+            "/api/v5/trade/easy-convert-currency-list",
+            None,
+        )
+        .await
+    }
+
+    /// Convert small balances into OKB or USDT.
+    /// POST /api/v5/trade/easy-convert
+    pub async fn easy_convert(
+        &self,
+        params: &EasyConvertRequest,
+    ) -> OkxResult<Vec<serde_json::Value>> {
+        self.post_signed("/api/v5/trade/easy-convert", params).await
+    }
+
+    /// Get easy convert history.
+    /// GET /api/v5/trade/easy-convert-history
+    pub async fn get_easy_convert_history(
+        &self,
+        params: &GetEasyConvertHistoryRequest,
+    ) -> OkxResult<Vec<serde_json::Value>> {
+        self.get_signed("/api/v5/trade/easy-convert-history", Some(params))
+            .await
+    }
+
+    /// Get the list of currencies available for one-click repay.
+    /// GET /api/v5/trade/one-click-repay-currency-list
+    pub async fn get_one_click_repay_list(&self) -> OkxResult<Vec<serde_json::Value>> {
+        self.get_signed::<serde_json::Value, ()>(
+            "/api/v5/trade/one-click-repay-currency-list",
+            None,
+        )
+        .await
+    }
+
+    /// Repay cross margin debt with a single click.
+    /// POST /api/v5/trade/one-click-repay
+    pub async fn one_click_repay(
+        &self,
+        params: &OneClickRepayRequest,
+    ) -> OkxResult<Vec<serde_json::Value>> {
+        self.post_signed("/api/v5/trade/one-click-repay", params)
+            .await
+    }
+
+    /// Get one-click repay history.
+    /// GET /api/v5/trade/one-click-repay-history
+    pub async fn get_one_click_repay_history(
+        &self,
+        params: &GetOneClickRepayHistoryRequest,
+    ) -> OkxResult<Vec<serde_json::Value>> {
+        self.get_signed(
+            "/api/v5/trade/one-click-repay-history",
+            Some(params),
+        )
+        .await
+    }
 }

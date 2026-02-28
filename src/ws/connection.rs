@@ -87,6 +87,67 @@ pub fn parse_ws_message(text: &str) -> Option<WsMessage> {
     None
 }
 
+/// Splits a WebSocket stream and spawns write and read I/O tasks.
+///
+/// This is a synchronous function so callers can avoid holding
+/// non-`Send` stream halves across `.await` points in their own
+/// async state machines.
+///
+/// Returns `(write_tx, msg_rx)`: a channel for sending outbound
+/// messages and a channel for receiving parsed inbound messages.
+pub fn spawn_io_tasks(
+    ws: WsStream,
+    conn_type: WsConnectionType,
+) -> (
+    mpsc::UnboundedSender<String>,
+    mpsc::UnboundedReceiver<WsMessage>,
+) {
+    let (mut write_half, read_half) = ws.split();
+    let (write_tx, mut write_rx) = mpsc::unbounded_channel::<String>();
+    let (msg_tx, msg_rx) = mpsc::unbounded_channel::<WsMessage>();
+    let msg_tx_for_read = msg_tx.clone();
+
+    tokio::spawn(async move {
+        while let Some(msg) = write_rx.recv().await {
+            if let Err(e) = write_half
+                .send(Message::Text(msg.into()))
+                .await
+            {
+                error!("WS {conn_type} write error: {e}");
+                break;
+            }
+        }
+        debug!("WS {conn_type} write loop ended");
+    });
+
+    tokio::spawn(async move {
+        let mut read = read_half;
+        while let Some(result) = read.next().await {
+            match result {
+                Ok(Message::Text(text)) => {
+                    if let Some(parsed) = parse_ws_message(&text) {
+                        if msg_tx_for_read.send(parsed).is_err() {
+                            break;
+                        }
+                    }
+                }
+                Ok(Message::Close(_)) => {
+                    let _ = msg_tx_for_read.send(WsMessage::Disconnected(conn_type));
+                    break;
+                }
+                Err(e) => {
+                    error!("WS {conn_type} read error: {e}");
+                    let _ = msg_tx_for_read.send(WsMessage::Disconnected(conn_type));
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
+
+    (write_tx, msg_rx)
+}
+
 /// Run the message read loop for a WebSocket connection.
 /// Reads messages from the WebSocket and sends them to the channel.
 pub async fn read_loop(
